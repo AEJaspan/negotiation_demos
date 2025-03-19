@@ -2,58 +2,28 @@ import streamlit as st
 import os
 import re
 import numpy as np
-from dotenv import load_dotenv, find_dotenv
 import nest_asyncio
+from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 nest_asyncio.apply()
 
-# Load environment variables for LLM configuration
-load_dotenv(find_dotenv())
-OPENAI_BASE_URL = "https://genai-sharedservice-emea.pwcinternal.com"
-os.environ["OPENAI_BASE_URL"] = OPENAI_BASE_URL
-os.environ["AZURE_OPENAI_ENDPOINT"] = os.environ["OPENAI_BASE_URL"]
-os.environ["AZURE_OPENAI_API_KEY"] = os.environ["OPENAI_API_KEY"]
-os.environ["OPENAI_API_VERSION"] = "2023-06-01-preview"
+os.environ['OPENAI_API_KEY'] = st.secrets['OPENAI_API_KEY']
 
-# Import LLM and Embedding classes.
-from langchain_openai import AzureChatOpenAI, AzureOpenAIEmbeddings
-
-# Define a simple credentials dictionary. Adjust as needed.
 credentials = {
-    "api_key": os.environ["AZURE_OPENAI_API_KEY"],
+    "api_key": os.environ["OPENAI_API_KEY"],
 }
-
+print(credentials)
 # Define the available LLM settings as a dictionary.
 available_models = {
     "GPT4oMini": (
-        AzureChatOpenAI(**credentials, model="azure.gpt-4o-mini", temperature=0.0),
-        AzureOpenAIEmbeddings(**credentials, model="azure.text-embedding-ada-002", chunk_size=16),
+        ChatOpenAI(**credentials, model="gpt-4o-mini", temperature=0.0),
+        OpenAIEmbeddings(**credentials, model="text-embedding-ada-002", chunk_size=16),
     ),
     "GPT4o": (
-        AzureChatOpenAI(**credentials, model="azure.gpt-4o", temperature=0.0),
-        AzureOpenAIEmbeddings(**credentials, model="azure.text-embedding-ada-002", chunk_size=16),
-    ),
-    "Claude35Sonnet": (
-        AzureChatOpenAI(**credentials, model="vertex_ai.anthropic.claude-3-5-sonnet", temperature=0.0),
-        AzureOpenAIEmbeddings(**credentials, model="azure.text-embedding-ada-002", chunk_size=16),
-    ),
-    "Claude35SonnetV2": (
-        AzureChatOpenAI(**credentials, model="vertex_ai.anthropic.claude-3-5-sonnet-v2", temperature=0.0),
-        AzureOpenAIEmbeddings(**credentials, model="azure.text-embedding-ada-002", chunk_size=16),
-    ),
-    "Claude3Hiku": (
-        AzureChatOpenAI(**credentials, model="vertex_ai.anthropic.claude-3-haiku", temperature=0.0),
-        AzureOpenAIEmbeddings(**credentials, model="azure.text-embedding-ada-002", chunk_size=16),
-    ),
-    "Gemini15Flash": (
-        AzureChatOpenAI(**credentials, model="vertex_ai.gemini-1.5-flash", temperature=0.0),
-        AzureOpenAIEmbeddings(**credentials, model="azure.text-embedding-ada-002", chunk_size=16),
-    ),
-    "Gemini15Pro": (
-        AzureChatOpenAI(**credentials, model="vertex_ai.gemini-1.5-pro", temperature=0.0),
-        AzureOpenAIEmbeddings(**credentials, model="azure.text-embedding-ada-002", chunk_size=16),
-    ),
+        ChatOpenAI(**credentials, model="gpt-4o", temperature=0.0),
+        OpenAIEmbeddings(**credentials, model="text-embedding-ada-002", chunk_size=16),
+    )
 }
-
+print(available_models['GPT4o'][0].invoke("Hello, world!"))
 # Use tabs to separate Game and Settings.
 tabs = st.tabs(["Game", "Settings"])
 
