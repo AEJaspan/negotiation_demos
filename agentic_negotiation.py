@@ -1,40 +1,40 @@
 import streamlit as st
 import os
-from dotenv import load_dotenv, find_dotenv
 import nest_asyncio
 import random
-
-from langchain_openai import AzureChatOpenAI, AzureOpenAIEmbeddings
+from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 from langchain import LLMChain, PromptTemplate
+from typing_extensions import TypedDict
+from langgraph.graph import StateGraph, START, END
+import pathlib
+import json
+import time
+import zipfile
+from io import BytesIO
+
 
 nest_asyncio.apply()
 
 # Load environment variables for LLM configuration
-load_dotenv(find_dotenv())
-OPENAI_BASE_URL = "https://genai-sharedservice-emea.pwcinternal.com"
-os.environ["OPENAI_BASE_URL"] = OPENAI_BASE_URL
-os.environ["AZURE_OPENAI_ENDPOINT"] = os.environ["OPENAI_BASE_URL"]
-os.environ["AZURE_OPENAI_API_KEY"] = os.environ["AZURE_OPENAI_API_KEY"]
-os.environ["OPENAI_API_VERSION"] = "2023-06-01-preview"
-
+os.environ['OPENAI_API_KEY'] = st.secrets['OPENAI_API_KEY']
 ##### Global Variables #####
-credentials = {"api_key": os.environ["AZURE_OPENAI_API_KEY"]}
+credentials = {"api_key": os.environ["OPENAI_API_KEY"]}
 available_models = {
     "GPT4oMini": (
-        AzureChatOpenAI(**credentials, model="azure.gpt-4o-mini", temperature=0.0),
-        AzureOpenAIEmbeddings(**credentials, model="azure.text-embedding-ada-002", chunk_size=16),
+        ChatOpenAI(**credentials, model="gpt-4o-mini", temperature=0.0),
+        OpenAIEmbeddings(**credentials, model="text-embedding-ada-002", chunk_size=16),
     ),
     "GPT4o": (
-        AzureChatOpenAI(**credentials, model="azure.gpt-4o", temperature=0.0),
-        AzureOpenAIEmbeddings(**credentials, model="azure.text-embedding-ada-002", chunk_size=16),
+        ChatOpenAI(**credentials, model="gpt-4o", temperature=0.0),
+        OpenAIEmbeddings(**credentials, model="text-embedding-ada-002", chunk_size=16),
     ),
 }
 
 def build_llm(model_name, temperature):
     if model_name == "GPT4oMini":
-        return AzureChatOpenAI(**credentials, model="azure.gpt-4o-mini", temperature=temperature)
+        return ChatOpenAI(**credentials, model="gpt-4o-mini", temperature=temperature)
     else:
-        return AzureChatOpenAI(**credentials, model="azure.gpt-4o", temperature=temperature)
+        return ChatOpenAI(**credentials, model="gpt-4o", temperature=temperature)
 
 # ----- Custom CSS for Chat Messages -----
 st.markdown(
@@ -224,8 +224,6 @@ def render_emoji_square(decision, agent):
 # ------------------------------
 # LangGraph Implementation for a Negotiation Round (Unified Log)
 # ------------------------------
-from typing_extensions import TypedDict
-from langgraph.graph import StateGraph, START, END
 
 # The round state now contains a unified negotiation_log list.
 class RoundState(TypedDict):
@@ -505,6 +503,45 @@ def render_past_round(round_num):
     else:
         st.write("No data for that round.")
 
+def save_past_round(round_num):
+    if round_num in st.session_state.round_dialogues and round_num in st.session_state.round_final_moves:
+        past_log = st.session_state.round_dialogues[round_num]
+        a1_move, a2_move = st.session_state.round_final_moves[round_num]
+        dir = pathlib.Path('dialogues')
+        dir.mkdir(parents=True, exist_ok=True)
+        timestamp = time.strftime("%Y-%m-%d-%H-%M", time.localtime())
+        path = f'dialogues/round_{round_num}-{timestamp}.json'
+        with open(path, 'w') as f:
+            json.dump({
+                "negotiation_log": past_log,
+                "agent1_move": a1_move,
+                "agent2_move": a2_move
+            }, f)
+        st.write(f"Round {round_num} saved to {path}")
+    else:
+        st.write("No data for that round.")
+
+
+# Function to create a zip file from all files in the dialogues directory
+def create_zip_from_dir(directory):
+    # Create a BytesIO buffer to hold the zip file
+    zip_buffer = BytesIO()
+    
+    # Create a zip file in memory
+    with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zip_file:
+        # Walk through the directory and add each file to the zip file
+        for root, dirs, files in os.walk(directory):
+            for file in files:
+                file_path = os.path.join(root, file)
+                # Add file to the zip archive
+                zip_file.write(file_path, os.path.relpath(file_path, directory))
+    
+    # Return the zip file in bytes
+    zip_buffer.seek(0)
+    return zip_buffer
+
+
+
 def skip_to_end():
     with st.spinner("Skipping to end..."):
         while st.session_state.turn <= st.session_state.N_TURNS:
@@ -661,9 +698,31 @@ def past_rounds_tab():
         rounds = sorted(st.session_state.round_dialogues.keys())
         selected_round = st.selectbox("Select a round to view", rounds)
         render_past_round(selected_round)
+        if st.button("💾 Save Round"):
+            save_past_round(selected_round)
+            st.rerun()
     else:
         st.write("No rounds have been completed yet.")
-
+    
+    if st.session_state.round_dialogues:
+        if st.button("💾 Save All Rounds"):
+            for round_num in sorted(st.session_state.round_dialogues.keys()):
+                save_past_round(round_num)
+            st.rerun()
+    # Button to create and download the zip file
+    if pathlib.Path('dialogues').exists():
+        if st.button("Zip and Download All Dialogues"):
+            # Create the zip file from the dialogues directory
+            zip_file = create_zip_from_dir('dialogues')
+            
+            # Provide a download link for the zip file
+            st.download_button(
+                label="Download All Dialogues",
+                data=zip_file,
+                file_name="dialogues.zip",
+                mime="application/zip"
+            )
+    
 with tabs[0]:
     game_tab()
 with tabs[1]:
