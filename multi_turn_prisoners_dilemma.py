@@ -5,6 +5,8 @@ import numpy as np
 import pandas as pd
 import nest_asyncio
 from langchain_openai import ChatOpenAI, OpenAIEmbeddings
+from pydantic import BaseModel, validator, Field
+from typing import Optional
 nest_asyncio.apply()
 
 os.environ['OPENAI_API_KEY'] = st.secrets['OPENAI_API_KEY']
@@ -229,12 +231,33 @@ def render_decision(ai_reasoning, ai_move, opp_move):
                 st.write(opp_move)
                 st.markdown(render_emoji_square(opp_move, "opponent"), unsafe_allow_html=True)
 
+class AIResponse(BaseModel):
+    reasoning: Optional[str] = Field(None, description="The AI's reasoning behind the move")
+    move: str = Field(..., description="The AI's move, either 'take' or 'share'")
+
+    @validator('move')
+    def validate_move(cls, value):
+        if value not in ['take', 'share']:
+            raise ValueError("move must be either 'take' or 'share'")
+        return value
+
+    @validator('reasoning', always=True)
+    def validate_reasoning(cls, value, values):
+        if not st.session_state.disable_reasoning and value is None:
+            raise ValueError("reasoning must be provided if reasoning is enabled")
+        return value
+
+# Function to get the AI's move
 def get_ai_move(update_ui=True):
-    # --- Step 1: Build prompt (without current opponent move) ---
+    # --- Step 1: Build prompt ---
     reasoning_prompt = "" if st.session_state.disable_reasoning else REASONING_MODE
     exposure_message = ""
     if st.session_state.expose_reasoning:
-        exposure_message = "The opponent will be able to see your reasoning, but not your final answer, so be aware that your thought process is being watched! Don't forget that everything you are saying will be visible to the opponent and may affect how they choose to either take or share!"
+        exposure_message = (
+            "The opponent will be able to see your reasoning, but not your final answer, "
+            "so be aware that your thought process is being watched! Don't forget that everything "
+            "you are saying will be visible to the opponent and may affect how they choose to either take or share!"
+        )
     prompt = TASK_DEFINITION.format(
         n_turns=st.session_state.N_TURNS,
         your_points=st.session_state.your_points,
@@ -243,23 +266,20 @@ def get_ai_move(update_ui=True):
         turn=st.session_state.turn
     ) + "\n" + reasoning_prompt + "\n" + exposure_message + "\n" + ANSWER_FORMAT_EXAMPLE
 
-    response = st.session_state.llm_model.invoke(prompt)
-    if hasattr(response, "content"):
-        response_text = response.content
-    else:
-        if update_ui:
-            st.error("Unexpected LLM response format.")
-        return None
+    # Initialize the language model with structured output
+    llm = st.session_state.llm_model
+    structured_llm = llm.with_structured_output(AIResponse)
 
-    try:
-        ai_reasoning = extract_reasoning(response_text) if not st.session_state.disable_reasoning else ""
-        ai_move = extract_answer(response_text)
-    except ValueError as e:
-        if update_ui:
-            st.error(f"Error parsing response: {e}")
-        ai_reasoning = "Error: could not extract reasoning."
-        ai_move = "take"
+    # Invoke the structured language model
+    response = structured_llm.invoke(prompt)
+
+    # Extract reasoning and move from the response
+    ai_reasoning = response.reasoning if response.reasoning else ""
+    ai_move = response.move
+
     return ai_reasoning, ai_move
+
+
 
 def play_turn(update_ui=True):
     ai_reasoning, ai_move = get_ai_move(update_ui=update_ui)

@@ -4,3 +4,4 @@ langchain
 langgraph
 nest-asyncio
 pandas
+pydantic
