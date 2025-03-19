@@ -2,6 +2,7 @@ import streamlit as st
 import os
 import re
 import numpy as np
+import pandas as pd
 import nest_asyncio
 from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 nest_asyncio.apply()
@@ -27,6 +28,9 @@ print(available_models['GPT4o'][0].invoke("Hello, world!"))
 # Use tabs to separate Game and Settings.
 tabs = st.tabs(["Game", "Settings"])
 
+def reset_tally():
+    st.session_state.tally = {"Agent": {"Shared": 0, "Taken": 0}, "User": {"Shared": 0, "Taken": 0}}
+
 # Ensure default values if not already set.
 if "llm_model" not in st.session_state:
     st.session_state.llm_model = available_models["GPT4oMini"][0]
@@ -40,6 +44,30 @@ if "opponent_strategy" not in st.session_state:
     st.session_state.opponent_strategy = "Random"  # Default strategy
 if "last_ai_move" not in st.session_state:
     st.session_state.last_ai_move = None
+if "tally" not in st.session_state:
+    reset_tally()
+# Reserve a space for the tally table
+tally_placeholder = st.empty()
+
+# Function to update the tally table
+def update_tally(agent_move, user_move):
+    if agent_move == "share":
+        st.session_state.tally["Agent"]["Shared"] += 1
+    else:
+        st.session_state.tally["Agent"]["Taken"] += 1
+    
+    if user_move == "share":
+        st.session_state.tally["User"]["Shared"] += 1
+    else:
+        st.session_state.tally["User"]["Taken"] += 1
+    
+    # Create a pandas DataFrame from the tally dictionary
+    df = pd.DataFrame.from_dict(st.session_state.tally, orient='index')
+    
+    # Update the tally table
+    tally_placeholder.write(df)
+
+
 
 # Inject custom CSS for blank squares with flashing animations.
 st.markdown("""
@@ -257,6 +285,7 @@ def play_turn(update_ui=True):
         st.session_state.their_points += 5
     else:
         st.warning("Unexpected move combination.")
+        print(ai_move, opp_move)
 
     # --- Step 4: Update history and increment turn ---
     st.session_state.history.append(f"You: {ai_move}")
@@ -267,6 +296,9 @@ def play_turn(update_ui=True):
     if update_ui:
         render_game_state()
         render_decision(ai_reasoning, ai_move, opp_move)
+
+        # Call the update_tally function after the moves are made
+        update_tally(ai_move, opp_move)
     return ai_reasoning
 
 def skip_to_end():
@@ -304,6 +336,7 @@ def game_tab():
             st.session_state.your_points = 0
             st.session_state.their_points = 0
             st.session_state.history = []
+            reset_tally()
             st.rerun()
 
     if st.session_state.turn > st.session_state.N_TURNS:
